@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 
 export function LoginForm() {
@@ -9,7 +8,6 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -32,8 +30,8 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/");
-    router.refresh();
+    // Full navigation ensures auth cookies are sent on the next request (needed behind ngrok/https proxies).
+    window.location.assign("/");
   }
 
   return (

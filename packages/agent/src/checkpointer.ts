@@ -6,8 +6,8 @@ let _saver: PostgresSaver | null = null;
  * Returns a singleton PostgresSaver backed by DATABASE_URL.
  * On first call, creates the LangGraph checkpoint tables (idempotent).
  *
- * Requires a direct (non-pooler) Postgres connection because LangGraph
- * checkpoint operations use advisory locks.
+ * Use Supabase Session pooler (port 5432) when the direct db.* host is
+ * unreachable (IPv6-only). Avoid transaction pooler (port 6543).
  */
 export async function getCheckpointer(): Promise<PostgresSaver> {
   if (!_saver) {
@@ -16,7 +16,19 @@ export async function getCheckpointer(): Promise<PostgresSaver> {
       throw new Error("DATABASE_URL environment variable is required for LangGraph checkpointing");
     }
     _saver = PostgresSaver.fromConnString(url);
-    await _saver.setup();
+    try {
+      await _saver.setup();
+    } catch (error) {
+      _saver = null;
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("ENOTFOUND") && url.includes("db.") && url.includes(".supabase.co")) {
+        throw new Error(
+          "Cannot reach Supabase direct database host (IPv6-only). " +
+            "Set DATABASE_URL to the Session pooler URI from Supabase Connect (port 5432, user postgres.[project-ref])."
+        );
+      }
+      throw error;
+    }
   }
   return _saver;
 }

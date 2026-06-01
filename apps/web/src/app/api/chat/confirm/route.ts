@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAgentEnvError } from "@/lib/agent-env";
 import { createServerClient, getPendingToolCall, decrypt } from "@agents/db";
 import { runAgent } from "@agents/agent";
 
 export async function POST(request: Request) {
   try {
+    const agentEnvError = getAgentEnvError();
+    if (agentEnvError) {
+      return NextResponse.json({ error: agentEnvError }, { status: 503 });
+    }
+
     const supabase = await createClient();
     const {
       data: { user },

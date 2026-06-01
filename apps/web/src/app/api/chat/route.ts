@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAgentEnvError } from "@/lib/agent-env";
 import { createServerClient, decrypt, touchSession } from "@agents/db";
 import { runAgent, flushSessionMemory } from "@agents/agent";
 
 export async function POST(request: Request) {
   try {
+    const agentEnvError = getAgentEnvError();
+    if (agentEnvError) {
+      return NextResponse.json({ error: agentEnvError }, { status: 503 });
+    }
+
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -127,15 +133,15 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
+      sessionId: session.id,
       response: result.pendingConfirmation ? null : result.response,
       pendingConfirmation: result.pendingConfirmation ?? null,
       toolCalls: result.toolCalls,
     });
   } catch (error) {
     console.error("Chat API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

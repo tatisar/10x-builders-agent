@@ -33,6 +33,14 @@ interface Props {
   initialPendingConfirmation: PendingConfirmation | null;
 }
 
+function formatApiError(data: unknown, status: number): string {
+  if (data && typeof data === "object" && "error" in data) {
+    const err = (data as { error: unknown }).error;
+    if (typeof err === "string" && err.trim()) return err;
+  }
+  return `Error del servidor (${status}). Revisa la consola del servidor.`;
+}
+
 function formatSessionDate(dateStr: string): string {
   const d = new Date(dateStr);
   return d.toLocaleDateString("es", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -183,6 +191,14 @@ export function ChatInterface({
       });
       const data = await res.json();
 
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: formatApiError(data, res.status) },
+        ]);
+        return;
+      }
+
       if (data.response) {
         setMessages((prev) => [
           ...prev,
@@ -230,6 +246,31 @@ export function ChatInterface({
       });
 
       const data = await res.json();
+
+      if (!res.ok) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: formatApiError(data, res.status) },
+        ]);
+        return;
+      }
+
+      if (data.sessionId && !activeSessionId) {
+        setActiveSessionId(data.sessionId);
+        setSessionList((prev) =>
+          prev.some((s) => s.id === data.sessionId)
+            ? prev
+            : [
+                {
+                  id: data.sessionId,
+                  created_at: new Date().toISOString(),
+                  last_used_at: new Date().toISOString(),
+                  status: "active",
+                },
+                ...prev,
+              ]
+        );
+      }
 
       if (data.response) {
         setMessages((prev) => [
@@ -396,6 +437,11 @@ export function ChatInterface({
 
         {/* Input — disabled while a confirmation is pending */}
         <div className="border-t border-neutral-200 px-4 py-3 dark:border-neutral-800">
+          {isReadOnly && (
+            <p className="mx-auto mb-2 max-w-2xl text-center text-xs text-neutral-500">
+              Crea una sesión para empezar a chatear.
+            </p>
+          )}
           {hasPendingConfirmation && (
             <p className="mx-auto mb-2 max-w-2xl text-center text-xs text-amber-600 dark:text-amber-400">
               Aprueba o cancela la acción pendiente antes de continuar.

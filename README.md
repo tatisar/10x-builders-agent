@@ -35,12 +35,18 @@ npm install
 ## Paso 3 — Aplicar el esquema SQL (tablas + RLS)
 
 1. En Supabase, abre **SQL Editor**.
-2. Abre el archivo del repo:
+2. Ejecuta **en orden** cada archivo de `packages/db/supabase/migrations/`:
 
-   `packages/db/supabase/migrations/00001_initial_schema.sql`
+   | Orden | Archivo |
+   |-------|---------|
+   | 1 | `00001_initial_schema.sql` |
+   | 2 | `00002_session_management.sql` — añade `last_used_at` (requerido para el chat) |
+   | 3 | `00003_scheduled_tasks.sql` |
+   | 4 | `00004_long_term_memory.sql` |
 
-3. Copia **todo** el contenido y pégalo en el editor.
-4. Ejecuta el script (**Run**).
+3. Para cada archivo: copia **todo** el contenido, pégalo en el editor y pulsa **Run**.
+
+Si omites `00002`, el chat fallará con: *Could not find the 'last_used_at' column of 'agent_sessions'*.
 
 Si algo falla (por ejemplo, el trigger `on_auth_user_created` en un proyecto ya modificado), revisa el mensaje de error; en la mayoría de proyectos nuevos el script aplica de una vez.
 
@@ -50,12 +56,24 @@ Si algo falla (por ejemplo, el trigger `on_auth_user_created` en un proyecto ya 
 
 1. En Supabase: **Authentication → Providers** → habilita **Email** (por defecto suele estar activo).
 2. **Authentication → URL configuration**:
-   - **Site URL**: para desarrollo local usa `http://localhost:3000`
+   - **Site URL**: para desarrollo local usa `http://localhost:3000` (o el puerto que uses, p. ej. `3001`)
    - **Redirect URLs**: añade al menos:
      - `http://localhost:3000/auth/callback`
      - `http://localhost:3000/**` (o la variante que permita tu versión del dashboard para desarrollo)
 
 Así el flujo de login/signup y el intercambio de código en `/auth/callback` funcionan en local.
+
+### ngrok (HTTPS temporal)
+
+Si expones la app con ngrok (p. ej. `https://shuffle-chaplain-jumble.ngrok-free.dev`):
+
+1. En Supabase **Authentication → URL configuration**, añade también:
+   - `https://TU-SUBDOMINIO.ngrok-free.dev/**`
+   - `https://TU-SUBDOMINIO.ngrok-free.dev/auth/callback`
+2. Arranca ngrok contra el mismo puerto que Next (`ngrok http 3001` si la app corre en 3001).
+3. Opcional en `apps/web/.env.local`: `NEXT_ALLOWED_DEV_ORIGINS=https://TU-SUBDOMINIO.ngrok-free.dev`
+
+Tras cambiar URLs en Supabase, reinicia `npm run dev` y prueba login de nuevo en la URL de ngrok.
 
 ---
 
@@ -78,6 +96,7 @@ Next.js carga `.env*` desde el directorio de la app **`apps/web`**, no desde la 
    | `NEXT_PUBLIC_SUPABASE_URL` | URL del proyecto Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Clave `anon` |
    | `SUPABASE_SERVICE_ROLE_KEY` | Clave `service_role` (solo servidor; la usa la API del agente y Telegram contra Postgres) |
+   | `DATABASE_URL` | URI Postgres **Session** de Supabase (Connect → Session, puerto **5432**). Usuario `postgres.[project-ref]`, host `aws-*-*.pooler.supabase.com`. El host directo `db.*` suele fallar en redes solo IPv4 |
    | `OPENROUTER_API_KEY` | Clave de OpenRouter |
    | `TELEGRAM_BOT_TOKEN` | *(Opcional)* Token del bot |
    | `TELEGRAM_WEBHOOK_SECRET` | *(Opcional)* Secreto que Telegram enviará en cabecera; debe coincidir con el configurado al registrar el webhook |

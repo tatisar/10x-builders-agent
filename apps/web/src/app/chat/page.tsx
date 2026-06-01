@@ -24,7 +24,26 @@ export default async function ChatPage() {
     .order("last_used_at", { ascending: false });
 
   const allSessions = sessions ?? [];
-  const currentSession = allSessions[0] ?? null;
+  let currentSession = allSessions[0] ?? null;
+
+  if (!currentSession) {
+    const { data: newSession } = await supabase
+      .from("agent_sessions")
+      .insert({
+        user_id: user.id,
+        channel: "web",
+        status: "active",
+        budget_tokens_used: 0,
+        budget_tokens_limit: 100000,
+      })
+      .select()
+      .single();
+    currentSession = newSession;
+  }
+
+  const sessionList = currentSession
+    ? [currentSession, ...allSessions.filter((s) => s.id !== currentSession!.id)]
+    : allSessions;
 
   let sessionMessages: Array<{ role: string; content: string; created_at: string; structured_payload?: Record<string, unknown> }> = [];
   let initialPendingToolCallId: string | null = null;
@@ -116,7 +135,7 @@ export default async function ChatPage() {
       <ChatInterface
         agentName={profile.agent_name as string}
         initialMessages={sessionMessages}
-        sessions={allSessions}
+        sessions={sessionList}
         currentSessionId={currentSession?.id ?? null}
         initialPendingConfirmation={initialPendingConfirmation}
       />
