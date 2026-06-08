@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 
 const TIMEOUT_MS = 120_000;
@@ -22,10 +23,11 @@ export async function executeBash(terminal: string, prompt: string): Promise<Bas
   }
 
   const cwd = await resolveCwd();
+  const bashExecutable = resolveBashExecutable();
 
   return new Promise((resolve) => {
     execFile(
-      "bash",
+      bashExecutable,
       ["-lc", prompt],
       { cwd, timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, encoding: "utf8" },
       (error, stdout, stderr) => {
@@ -39,6 +41,23 @@ export async function executeBash(terminal: string, prompt: string): Promise<Bas
       }
     );
   });
+}
+
+function resolveBashExecutable(): string {
+  const override = process.env.BASH_TOOL_SHELL?.trim();
+  if (override) return override;
+
+  if (process.platform === "win32") {
+    const candidates = [
+      "C:\\Program Files\\Git\\bin\\bash.exe",
+      "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+    ];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+
+  return "bash";
 }
 
 async function resolveCwd(): Promise<string> {
