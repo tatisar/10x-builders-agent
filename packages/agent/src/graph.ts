@@ -105,6 +105,23 @@ function buildConfirmationMessage(
           : `con expresión cron "${args.cron_expr}"`;
       return `Se requiere confirmación para programar una tarea (${schedType}) ${when}.\n\nPrompt: "${args.prompt}"`;
     }
+    case "cancel_scheduled_task": {
+      const action = args.action === "delete" ? "eliminar" : "pausar";
+      const taskId = String(args.task_id ?? "");
+      const promptMatch = String(args.prompt_match ?? "");
+      const target = taskId
+        ? `tarea \`${taskId}\``
+        : `tarea cuyo prompt contiene "${promptMatch}"`;
+      return `Se requiere confirmación para ${action} la ${target}.`;
+    }
+    case "resume_scheduled_task": {
+      const taskId = String(args.task_id ?? "");
+      const promptMatch = String(args.prompt_match ?? "");
+      const target = taskId
+        ? `tarea \`${taskId}\``
+        : `tarea pausada cuyo prompt contiene "${promptMatch}"`;
+      return `Se requiere confirmación para reactivar la ${target}.`;
+    }
     default:
       return `Se requiere confirmación para ejecutar "${toolId}" (riesgo: ${getToolRisk(toolId)}).`;
   }
@@ -139,7 +156,7 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
     config?: RunnableConfig
   ): Promise<Partial<typeof GraphState.State>> {
     const currentDate = new Date().toLocaleString("es", {
-      timeZone: "America/Bogota",
+      timeZone: "Europa/Madrid",
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -147,7 +164,10 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
       hour: "2-digit",
       minute: "2-digit",
     });
-    const systemPromptWithDate = `${state.systemPrompt}\n\nFecha y hora actual: ${currentDate} (hora Colombia).`;
+    const unattendedContext = state.bypassConfirmation
+      ? "\n\n[Modo ejecución automática — tarea programada] No hay usuario presente. Las herramientas de riesgo medio/alto se aprueban y ejecutan automáticamente; no pidas confirmación humana. Usa las tools habilitadas directamente (p. ej. fetch_url para URLs públicas, o bash con curl como alternativa)."
+      : "";
+    const systemPromptWithDate = `${state.systemPrompt}${unattendedContext}\n\nFecha y hora actual: ${currentDate} (hora Colombia).`;
 
     // Inject SystemMessage fresh so it is never accumulated in state.messages.
     const response = await modelWithTools.invoke(
@@ -177,10 +197,15 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
       toolCallNames.push(tc.name);
 
       if (def && toolRequiresConfirmation(toolId)) {
-        if (bypassConfirmation) {
+        if (state.bypassConfirmation) {
           // Unattended run (e.g. cron): auto-approve without interrupting.
-          const record = await createToolCall(db, sessionId, toolId, tc.args as Record<string, unknown>, true);
-          await updateToolCallStatus(db, record.id, "approved");
+          const record = await createToolCall(
+            db,
+            sessionId,
+            toolId,
+            tc.args as Record<string, unknown>,
+            false
+          );
 
           const autoHandler = TOOL_HANDLERS[toolId];
           try {
@@ -382,7 +407,13 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
       execute: async () => {
         await addMessage(db, sessionId, "user", message!);
         return app.invoke(
-          { messages: [new HumanMessage(message!)], sessionId, userId, systemPrompt },
+          {
+            messages: [new HumanMessage(message!)],
+            sessionId,
+            userId,
+            systemPrompt,
+            bypassConfirmation,
+          },
           config
         );
       },

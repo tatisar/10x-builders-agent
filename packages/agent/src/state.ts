@@ -23,4 +23,12 @@ export const GraphState = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => 0,
   }),
+  /**
+   * When true (cron / scheduled tasks), medium/high-risk tools auto-execute
+   * without interrupting for human confirmation.
+   */
+  bypassConfirmation: Annotation<boolean>({
+    reducer: (_prev, next) => next,
+    default: () => false,
+  }),
 });

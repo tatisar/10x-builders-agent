@@ -1,12 +1,15 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { DbClient } from "@agents/db";
-import type { UserToolSetting, UserIntegration } from "@agents/types";
+import type { ScheduledTaskStatus, UserToolSetting, UserIntegration } from "@agents/types";
 import { TOOL_CATALOG } from "@agents/types";
 import { TOOL_SCHEMAS } from "./schemas";
 import { withTracking } from "./withTracking";
 import { executeBash } from "./bashExec";
 import { executeReadFile, executeWriteFile, executeEditFile } from "./fileTools";
+import { executeFetchUrl } from "./fetchUrl";
+import { resolveScheduledTaskTarget } from "./resolveScheduledTaskTarget";
+import { computeNextRunAtForResume } from "./scheduledTaskUtils";
 
 const GITHUB_API = "https://api.github.com";
 const GITHUB_UA = "10x-builders-agent/1.0";
@@ -168,6 +171,11 @@ export const TOOL_HANDLERS: ToolHandlers = {
     return result as unknown as Record<string, unknown>;
   },
 
+  fetch_url: async (input: { url: string }) => {
+    const result = await executeFetchUrl(input);
+    return result as unknown as Record<string, unknown>;
+  },
+
   write_file: async (input: { path: string; content: string }) => {
     const result = await executeWriteFile(input);
     return result as unknown as Record<string, unknown>;
@@ -244,6 +252,175 @@ export const TOOL_HANDLERS: ToolHandlers = {
         input.schedule_type === "one_time"
           ? `Tarea programada para el ${readableTime} (${tz}). Recibirás el resultado por Telegram.`
           : `Tarea recurrente creada con expresión "${input.cron_expr}". Próxima ejecución: ${readableTime} (${tz}).`,
+    };
+  },
+
+  list_scheduled_tasks: async (
+    input: { status?: ScheduledTaskStatus },
+    ctx: ToolContext
+  ) => {
+    const { listScheduledTasksByUser } = await import("@agents/db");
+    const tasks = await listScheduledTasksByUser(ctx.db, ctx.userId, input.status);
+    return {
+      ok: true,
+      tasks: tasks.map((t) => ({
+        task_id: t.id,
+        prompt: t.prompt,
+        schedule_type: t.schedule_type,
+        cron_expr: t.cron_expr ?? null,
+        run_at: t.run_at ?? null,
+        next_run_at: t.next_run_at ?? null,
+        status: t.status,
+        created_at: t.created_at,
+      })),
+      count: tasks.length,
+    };
+  },
+
+  cancel_scheduled_task: async (
+    input: { task_id?: string; prompt_match?: string; action: "pause" | "delete" },
+    ctx: ToolContext
+  ) => {
+    const {
+      getScheduledTaskForUser,
+      listScheduledTasksByUser,
+      pauseScheduledTask,
+      deleteScheduledTask,
+    } = await import("@agents/db");
+
+    const resolved = await resolveScheduledTaskTarget(
+      ctx.db,
+      ctx.userId,
+      input,
+      ["active", "paused"],
+      getScheduledTaskForUser,
+      listScheduledTasksByUser
+    );
+    if (!resolved.ok) {
+      return resolved;
+    }
+
+    const task = resolved.task;
+
+    if (task.status === "completed") {
+      return {
+        ok: false,
+        error: {
+          code: "ALREADY_COMPLETED",
+          message: `Task ${task.id} is already completed and cannot be cancelled.`,
+        },
+      };
+    }
+
+    if (input.action === "pause") {
+      const updated = await pauseScheduledTask(ctx.db, task.id, ctx.userId);
+      if (!updated) {
+        return {
+          ok: false,
+          error: { code: "NOT_FOUND", message: `Task not found: ${task.id}` },
+        };
+      }
+      return {
+        ok: true,
+        task_id: task.id,
+        action: "pause",
+        message:
+          "Tarea pausada. Ya no se ejecutará hasta que uses resume_scheduled_task para reactivarla.",
+      };
+    }
+
+    const deleted = await deleteScheduledTask(ctx.db, task.id, ctx.userId);
+    if (!deleted) {
+      return {
+        ok: false,
+        error: { code: "NOT_FOUND", message: `Task not found: ${task.id}` },
+      };
+    }
+    return {
+      ok: true,
+      task_id: task.id,
+      action: "delete",
+      message: "Tarea eliminada permanentemente.",
+    };
+  },
+
+  resume_scheduled_task: async (
+    input: { task_id?: string; prompt_match?: string },
+    ctx: ToolContext
+  ) => {
+    const {
+      getScheduledTaskForUser,
+      listScheduledTasksByUser,
+      resumeScheduledTask,
+    } = await import("@agents/db");
+
+    const resolved = await resolveScheduledTaskTarget(
+      ctx.db,
+      ctx.userId,
+      input,
+      ["paused"],
+      getScheduledTaskForUser,
+      listScheduledTasksByUser
+    );
+    if (!resolved.ok) {
+      return resolved;
+    }
+
+    const task = resolved.task;
+
+    if (task.status === "active") {
+      return {
+        ok: false,
+        error: {
+          code: "ALREADY_ACTIVE",
+          message: `Task ${task.id} is already active.`,
+        },
+      };
+    }
+
+    if (task.status === "completed" || task.status === "failed") {
+      return {
+        ok: false,
+        error: {
+          code: "CANNOT_RESUME",
+          message: `Task ${task.id} has status "${task.status}" and cannot be resumed.`,
+        },
+      };
+    }
+
+    const nextRun = computeNextRunAtForResume(task);
+    if (!nextRun.ok) {
+      return { ok: false, error: { code: nextRun.code, message: nextRun.message } };
+    }
+
+    const updated = await resumeScheduledTask(
+      ctx.db,
+      task.id,
+      ctx.userId,
+      nextRun.nextRunAt
+    );
+    if (!updated) {
+      return {
+        ok: false,
+        error: {
+          code: "NOT_FOUND",
+          message: `Task ${task.id} was not paused or no longer exists.`,
+        },
+      };
+    }
+
+    const readableTime = new Date(nextRun.nextRunAt).toLocaleString("es", {
+      timeZone: task.timezone,
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+
+    return {
+      ok: true,
+      task_id: task.id,
+      status: "active",
+      next_run_at: nextRun.nextRunAt,
+      message: `Tarea reactivada. Próxima ejecución: ${readableTime} (${task.timezone}).`,
     };
   },
 };

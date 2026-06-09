@@ -27,6 +27,9 @@ export const TOOL_SCHEMAS = {
     offset: z.number().int().min(1).optional().describe("1-based line number to start reading from. Defaults to 1."),
     limit: z.number().int().min(1).optional().describe("Maximum number of lines to return starting at offset."),
   }),
+  fetch_url: z.object({
+    url: z.string().url().describe("Public HTTP or HTTPS URL to fetch."),
+  }),
   write_file: z.object({
     path: z.string().describe("Absolute path or path relative to the server process working directory. The file must NOT exist yet."),
     content: z.string().max(500_000).describe("Full UTF-8 content to write into the new file."),
@@ -122,6 +125,51 @@ export const TOOL_SCHEMAS = {
           "one_time tasks require run_at; recurring tasks require cron_expr.",
       }
     ),
+  list_scheduled_tasks: z.object({
+    status: z
+      .enum(["active", "paused", "completed", "failed"])
+      .optional()
+      .describe("Optional filter by task status. Omit to list all tasks."),
+  }),
+  cancel_scheduled_task: z
+    .object({
+      task_id: z.string().uuid().optional().describe("UUID of the task to cancel (preferred)."),
+      prompt_match: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Substring to find the task by prompt when task_id is unknown."),
+      action: z
+        .enum(["pause", "delete"])
+        .describe("pause: stop future runs; delete: remove the task permanently."),
+    })
+    .superRefine((data, ctx) => {
+      if (!data.task_id && !data.prompt_match) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Either task_id or prompt_match is required.",
+          path: ["task_id"],
+        });
+      }
+    }),
+  resume_scheduled_task: z
+    .object({
+      task_id: z.string().uuid().optional().describe("UUID of the paused task to resume (preferred)."),
+      prompt_match: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Substring to find a paused task by prompt when task_id is unknown."),
+    })
+    .superRefine((data, ctx) => {
+      if (!data.task_id && !data.prompt_match) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Either task_id or prompt_match is required.",
+          path: ["task_id"],
+        });
+      }
+    }),
 } as const;
 
 export type ToolSchemas = typeof TOOL_SCHEMAS;

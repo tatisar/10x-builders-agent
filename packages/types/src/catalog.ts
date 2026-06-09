@@ -109,6 +109,22 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     displayDescription: "Lee un archivo de texto existente dentro del workspace (opcionalmente por rango de líneas). No crea ni modifica archivos.",
   },
   {
+    id: "fetch_url",
+    name: "fetch_url",
+    description:
+      "Fetches a public HTTP or HTTPS URL from the server and returns clean text or parsed JSON for the agent. Use this when you need web page content, API responses, or documentation from a URL. Do NOT use this for local files (use read_file), shell commands (use bash), or authenticated/private endpoints. Parameters: `url` must be a valid http:// or https:// URL. Process: validate URL → HTTP GET with timeout and size limits → normalize body (JSON parse or HTML-to-text strip) → return JSON. Success: { ok: true, url, final_url?, status, content_type, format: \"json\"|\"text\", content }. Failure: { ok: false, url, error: { code, message } } e.g. TOOL_DISABLED, INVALID_URL, HTTP_ERROR, TIMEOUT, TOO_LARGE, FETCH_FAILED. Max body ~512 KB, timeout ~30s. No confirmation required (low risk).",
+    risk: "low",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Public HTTP or HTTPS URL to fetch." },
+      },
+      required: ["url"],
+    },
+    displayName: "Fetch URL",
+    displayDescription: "Descarga una URL pública y devuelve texto o JSON limpio.",
+  },
+  {
     id: "write_file",
     name: "write_file",
     description:
@@ -187,6 +203,79 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     displayName: "Programar tarea",
     displayDescription:
       "Crea una tarea programada que el agente ejecutará automáticamente y notificará por Telegram.",
+  },
+  {
+    id: "list_scheduled_tasks",
+    name: "list_scheduled_tasks",
+    description:
+      "Lists the user's scheduled tasks stored in the database. Use this before cancel_scheduled_task or resume_scheduled_task when the user asks what tasks are scheduled or needs a task_id. Optional status filter: active, paused, completed, failed; omit to return all. Returns JSON: { ok: true, tasks: [{ task_id, prompt, schedule_type, cron_expr, run_at, next_run_at, status, created_at }], count }. Only returns tasks belonging to the current user.",
+    risk: "low",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["active", "paused", "completed", "failed"],
+          description: "Optional filter by task status. Omit to list all tasks.",
+        },
+      },
+      required: [],
+    },
+    displayName: "Listar tareas programadas",
+    displayDescription: "Muestra las tareas programadas del usuario (activas, pausadas, completadas o todas).",
+  },
+  {
+    id: "cancel_scheduled_task",
+    name: "cancel_scheduled_task",
+    description:
+      "Pauses or permanently deletes a scheduled task so it will not run again (pause) or removes it entirely (delete). Provide task_id (preferred, from list_scheduled_tasks or schedule_task) OR prompt_match (case-insensitive substring of the task prompt) when the user does not have the id. action is required: pause sets status=paused; delete removes the row. Cannot cancel completed tasks. If prompt_match matches multiple tasks, returns AMBIGUOUS with candidate task_ids — call list_scheduled_tasks and retry with task_id. Requires user confirmation in interactive chat.",
+    risk: "medium",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        task_id: {
+          type: "string",
+          description: "UUID of the task to cancel (preferred).",
+        },
+        prompt_match: {
+          type: "string",
+          description: "Substring to find the task by prompt when task_id is unknown.",
+        },
+        action: {
+          type: "string",
+          enum: ["pause", "delete"],
+          description: "pause: stop future runs but keep history; delete: remove the task permanently.",
+        },
+      },
+      required: ["action"],
+    },
+    displayName: "Cancelar tarea programada",
+    displayDescription:
+      "Pausa o elimina una tarea programada por id o por fragmento del prompt (requiere confirmación).",
+  },
+  {
+    id: "resume_scheduled_task",
+    name: "resume_scheduled_task",
+    description:
+      "Resumes a paused scheduled task (status=paused) so the cron runner will execute it again. Use after cancel_scheduled_task with action pause, or when the user asks to reactivate a paused task. Provide task_id (preferred, from list_scheduled_tasks) OR prompt_match (case-insensitive substring). Recalculates next_run_at: recurring tasks use the next cron occurrence from now; one_time tasks reuse run_at only if it is still in the future (otherwise RUN_AT_PAST — create a new task with schedule_task). Cannot resume active, completed, or failed tasks. If prompt_match matches multiple paused tasks, returns AMBIGUOUS with candidate task_ids. Requires user confirmation in interactive chat.",
+    risk: "medium",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        task_id: {
+          type: "string",
+          description: "UUID of the paused task to resume (preferred).",
+        },
+        prompt_match: {
+          type: "string",
+          description: "Substring to find a paused task by prompt when task_id is unknown.",
+        },
+      },
+      required: [],
+    },
+    displayName: "Reactivar tarea programada",
+    displayDescription:
+      "Reactiva una tarea pausada y recalcula la próxima ejecución (requiere confirmación).",
   },
   {
     id: "bash",

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { Cron } from "croner";
 import {
   createServerClient,
   decrypt,
@@ -8,23 +7,11 @@ import {
   completeTaskRun,
   failTaskRun,
 } from "@agents/db";
-import { runAgent } from "@agents/agent";
+import { runAgent, computeNextRunAtAfterRun } from "@agents/agent";
 import { notifyUserViaTelegram } from "@/lib/telegram/send";
 import type { ScheduledTask, UserToolSetting, UserIntegration } from "@agents/types";
 
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
-
-function computeNextRunAt(task: ScheduledTask): string | null {
-  if (task.schedule_type === "one_time") return null;
-  if (!task.cron_expr) return null;
-  try {
-    const job = new Cron(task.cron_expr, { timezone: task.timezone });
-    const next = job.nextRun();
-    return next ? next.toISOString() : null;
-  } catch {
-    return null;
-  }
-}
 
 async function buildAgentContextForTask(
   db: ReturnType<typeof createServerClient>,
@@ -180,7 +167,13 @@ async function executeTask(
 
     const result = await runAgent({ ...ctx, message: task.prompt, bypassConfirmation: true });
 
-    const nextRunAt = computeNextRunAt(task);
+    if (result.pendingConfirmation) {
+      throw new Error(
+        `HITL no bypassed for tool "${result.pendingConfirmation.tool_name}" during cron run`
+      );
+    }
+
+    const nextRunAt = computeNextRunAtAfterRun(task);
     const newStatus = task.schedule_type === "one_time" ? "completed" : "active";
 
     // Notify user via Telegram
@@ -200,7 +193,7 @@ async function executeTask(
     const errorMessage = String(err);
     console.error(`[cron] Task ${task.id} failed:`, err);
 
-    const nextRunAt = computeNextRunAt(task);
+    const nextRunAt = computeNextRunAtAfterRun(task);
 
     await failTaskRun(db, {
       runId: run.id,

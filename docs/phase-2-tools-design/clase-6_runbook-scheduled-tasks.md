@@ -126,6 +126,60 @@ El agente llamará a `schedule_task` con:
 | `0 9 1 * *` | El 1ro de cada mes a las 9 AM |
 | `*/15 * * * *` | Cada 15 minutos |
 
+## Gestionar tareas desde el chat
+
+Además de `schedule_task`, el agente dispone de:
+
+| Tool | Riesgo | Confirmación |
+|------|--------|--------------|
+| `list_scheduled_tasks` | bajo | No |
+| `cancel_scheduled_task` | medio | Sí (HITL) |
+| `resume_scheduled_task` | medio | Sí (HITL) |
+
+Habilítalos en **Ajustes → Herramientas** junto con `schedule_task`.
+
+### Listar tareas
+
+Ejemplos de prompts:
+
+- "¿Qué tareas programadas tengo?"
+- "Muéstrame mis tareas activas"
+
+El agente llamará a `list_scheduled_tasks` (opcionalmente con `status: "active"`). La respuesta incluye `task_id` para cada tarea.
+
+### Pausar o eliminar una tarea
+
+Ejemplos:
+
+- "Pausa la tarea que me recuerda revisar issues"
+- "Elimina la tarea con id `uuid-aqui`"
+
+El agente llamará a `cancel_scheduled_task` con:
+
+- `action: "pause"` — deja `status=paused`; el cron ya no la ejecuta
+- `action: "delete"` — borra la fila (y sus runs en cascada)
+
+Identificación de la tarea:
+
+- Por `task_id` (preferido, devuelto por `list_scheduled_tasks` o al crear la tarea)
+- Por `prompt_match` (subcadena del prompt; si hay varias coincidencias, el tool devuelve `AMBIGUOUS` con candidatos)
+
+Las tareas `completed` no se pueden cancelar.
+
+### Reactivar una tarea pausada
+
+Ejemplos:
+
+- "Reactiva la tarea pausada de revisar issues"
+- "Reanuda la tarea con id `uuid-aqui`"
+
+El agente llamará a `resume_scheduled_task` con `task_id` o `prompt_match`. Solo funciona con tareas `status=paused`. Al reactivar:
+
+- **Recurrente:** recalcula `next_run_at` con la próxima ocurrencia del cron desde ahora
+- **One-time:** reutiliza `run_at` solo si sigue en el futuro; si ya pasó, devuelve `RUN_AT_PAST` (crear nueva tarea con `schedule_task`)
+
+Identificación: igual que cancel (`task_id` preferido, `prompt_match` como alternativa).
+
 ## Notificaciones Telegram
 
 Por defecto, cada ejecución envía el resultado al chat de Telegram vinculado.  
@@ -160,3 +214,22 @@ Revisa en Supabase:
 - `agent_sessions`: debe existir una sesión con `channel=cron`
 - `agent_messages`: debe tener los mensajes de esa sesión
 - Si tienes Telegram vinculado, debes recibir el mensaje
+
+### Verificar listado y cancelación
+1. Habilita `list_scheduled_tasks` y `cancel_scheduled_task` en Ajustes → Herramientas.
+2. Crea una tarea de prueba con `schedule_task`.
+3. Pide "muéstrame mis tareas programadas" — debe listar la tarea con `task_id`.
+4. Pide "pausa la tarea de …" (usando un fragmento del prompt) — confirma en UI.
+5. Verifica en `scheduled_tasks` que `status=paused`.
+6. Dispara el cron manualmente — la tarea pausada **no** debe ejecutarse.
+7. Pide "elimina la tarea con id …" — confirma — la fila debe desaparecer de `scheduled_tasks`.
+8. Caso ambiguo: crea dos tareas con prompts similares y cancela por `prompt_match` — debe devolver error `AMBIGUOUS` con candidatos.
+
+### Verificar reactivación
+1. Habilita `resume_scheduled_task` en Ajustes → Herramientas.
+2. Pausa una tarea con `cancel_scheduled_task` (action pause).
+3. Pide "muéstrame mis tareas pausadas" — debe aparecer con `status=paused`.
+4. Pide "reactiva la tarea de …" — confirma en UI.
+5. Verifica en `scheduled_tasks`: `status=active` y `next_run_at` actualizado.
+6. Dispara el cron cuando `next_run_at <= now` — la tarea debe ejecutarse.
+7. One-time con `run_at` pasado: al reactivar debe devolver `RUN_AT_PAST`.

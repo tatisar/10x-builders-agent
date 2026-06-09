@@ -74,8 +74,13 @@ export function OnboardingWizard({ userId, initialProfile, initialToolSettings }
       "github_create_repo",
       "bash",
       "read_file",
+      "fetch_url",
       "write_file",
       "edit_file",
+      "schedule_task",
+      "list_scheduled_tasks",
+      "cancel_scheduled_task",
+      "resume_scheduled_task",
     ];
 
     for (const toolId of TOOL_IDS) {

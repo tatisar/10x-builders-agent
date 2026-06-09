@@ -2,6 +2,7 @@ import type { DbClient } from "../client";
 import type {
   ScheduledTask,
   ScheduledTaskRun,
+  ScheduledTaskStatus,
   ScheduleType,
   TaskRunStatus,
 } from "@agents/types";
@@ -90,15 +91,89 @@ export async function getScheduledTask(
 
 export async function listScheduledTasksByUser(
   db: DbClient,
-  userId: string
+  userId: string,
+  status?: ScheduledTaskStatus
 ): Promise<ScheduledTask[]> {
-  const { data, error } = await db
+  let query = db
     .from("scheduled_tasks")
     .select("*")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as ScheduledTask[];
+}
+
+export async function getScheduledTaskForUser(
+  db: DbClient,
+  taskId: string,
+  userId: string
+): Promise<ScheduledTask | null> {
+  const { data, error } = await db
+    .from("scheduled_tasks")
+    .select("*")
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data as ScheduledTask | null;
+}
+
+export async function pauseScheduledTask(
+  db: DbClient,
+  taskId: string,
+  userId: string
+): Promise<ScheduledTask | null> {
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from("scheduled_tasks")
+    .update({ status: "paused", updated_at: now })
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data as ScheduledTask | null;
+}
+
+export async function resumeScheduledTask(
+  db: DbClient,
+  taskId: string,
+  userId: string,
+  nextRunAt: string
+): Promise<ScheduledTask | null> {
+  const now = new Date().toISOString();
+  const { data, error } = await db
+    .from("scheduled_tasks")
+    .update({ status: "active", next_run_at: nextRunAt, updated_at: now })
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .eq("status", "paused")
+    .select()
+    .maybeSingle();
+  if (error) throw error;
+  return data as ScheduledTask | null;
+}
+
+export async function deleteScheduledTask(
+  db: DbClient,
+  taskId: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await db
+    .from("scheduled_tasks")
+    .delete()
+    .eq("id", taskId)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return !!data;
 }
 
 export async function createTaskRun(
