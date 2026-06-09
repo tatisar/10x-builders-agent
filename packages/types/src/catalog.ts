@@ -129,19 +129,26 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     id: "edit_file",
     name: "edit_file",
     description:
-      "Edits an EXISTING UTF-8 text file by replacing EXACTLY ONE occurrence of old_string with new_string. Use this when you need to update part of a file without rewriting the whole file. Do NOT use this to create a new file (use write_file). If old_string might match zero or multiple places, add more surrounding context to make it unique. old_string and new_string are literal substrings, not regex. Line endings must match those in the file. Parameters: `path` can be absolute or relative (resolved from the server process working directory, same as the bash tool). Process: resolve path → read file → count occurrences of old_string → if not exactly 1, fail with a clear message (0 found vs N found) → apply replacement → write safely → return JSON. Success: { ok: true, path, replacements: 1 }. Failure: { ok: false, path, error: { code, message } } e.g. file not found, old_string found 0 times, old_string found N>1 times, permission denied, or tool disabled. Human approval required before execution.",
+      "Edits an EXISTING UTF-8 text file in two modes. REPLACE MODE (default): set old_string and new_string — replaces EXACTLY ONE occurrence of old_string with new_string. Use when updating part of a file; if old_string might match zero or multiple places, add more surrounding context. INSERT MODE: set insert_position and new_string (omit old_string). insert_position: start (prepend), end (append), before_line (insert before 1-based line number), after_line (insert after 1-based line number). For before_line/after_line, line is required. Do NOT use this to create a new file (use write_file). Strings are literal, not regex. Line endings in replace mode must match the file. Parameters: path can be absolute or relative (resolved from server process working directory). Success replace: { ok: true, operation: replace, path, replacements: 1 }. Success insert: { ok: true, operation: insert, path, insert_position, line? }. Failure: { ok: false, path, error: { code, message } }. Human approval required before execution.",
     risk: "high",
     parameters_schema: {
       type: "object",
       properties: {
         path: { type: "string", description: "Absolute path or path relative to the server process working directory. The file must already exist." },
-        old_string: { type: "string", description: "Literal substring to find. Must appear exactly once in the file." },
-        new_string: { type: "string", description: "Literal string that replaces the single occurrence of old_string." },
+        old_string: { type: "string", description: "Replace mode only. Literal substring to find; must appear exactly once." },
+        new_string: { type: "string", description: "Replace mode: replacement text. Insert mode: text to insert." },
+        insert_position: {
+          type: "string",
+          enum: ["start", "end", "before_line", "after_line"],
+          description: "Insert mode. Where to insert new_string. Omit for replace mode.",
+        },
+        line: { type: "number", description: "1-based line number. Required for before_line and after_line." },
       },
-      required: ["path", "old_string", "new_string"],
+      required: ["path", "new_string"],
     },
     displayName: "Editar archivo",
-    displayDescription: "Reemplaza una única aparición de un fragmento en un archivo existente. No crea archivos nuevos.",
+    displayDescription:
+      "Reemplaza un fragmento único o inserta texto al inicio, al final o en una línea concreta. No crea archivos nuevos.",
   },
   {
     id: "schedule_task",

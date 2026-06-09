@@ -73,10 +73,22 @@ function buildConfirmationMessage(
     }
     case "edit_file": {
       const path = String(args.path ?? "");
-      const oldStr = String(args.old_string ?? "");
       const newStr = String(args.new_string ?? "");
-      const oldPreview = oldStr.length > 200 ? `${oldStr.slice(0, 200)}…` : oldStr;
       const newPreview = newStr.length > 200 ? `${newStr.slice(0, 200)}…` : newStr;
+      const insertPosition = args.insert_position as string | undefined;
+      if (insertPosition) {
+        const line = args.line as number | undefined;
+        const positionLabels: Record<string, string> = {
+          start: "al inicio del archivo",
+          end: "al final del archivo",
+          before_line: `antes de la línea ${line ?? "?"}`,
+          after_line: `después de la línea ${line ?? "?"}`,
+        };
+        const where = positionLabels[insertPosition] ?? insertPosition;
+        return `Se requiere confirmación para insertar texto en \`${path}\` ${where}:\n\`\`\`\n${newPreview}\n\`\`\``;
+      }
+      const oldStr = String(args.old_string ?? "");
+      const oldPreview = oldStr.length > 200 ? `${oldStr.slice(0, 200)}…` : oldStr;
       return `Se requiere confirmación para editar \`${path}\`.\n\n**Fragmento a reemplazar:**\n\`\`\`\n${oldPreview}\n\`\`\`\n\n**Nuevo contenido:**\n\`\`\`\n${newPreview}\n\`\`\``;
     }
     case "bash": {

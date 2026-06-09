@@ -173,7 +173,13 @@ export const TOOL_HANDLERS: ToolHandlers = {
     return result as unknown as Record<string, unknown>;
   },
 
-  edit_file: async (input: { path: string; old_string: string; new_string: string }) => {
+  edit_file: async (input: {
+    path: string;
+    new_string: string;
+    old_string?: string;
+    insert_position?: "start" | "end" | "before_line" | "after_line";
+    line?: number;
+  }) => {
     const result = await executeEditFile(input);
     return result as unknown as Record<string, unknown>;
   },

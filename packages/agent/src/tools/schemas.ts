@@ -31,11 +31,61 @@ export const TOOL_SCHEMAS = {
     path: z.string().describe("Absolute path or path relative to the server process working directory. The file must NOT exist yet."),
     content: z.string().max(500_000).describe("Full UTF-8 content to write into the new file."),
   }),
-  edit_file: z.object({
-    path: z.string().describe("Absolute path or path relative to the server process working directory. The file must already exist."),
-    old_string: z.string().describe("Literal substring to find. Must appear exactly once in the file."),
-    new_string: z.string().describe("Literal string that replaces the single occurrence of old_string."),
-  }),
+  edit_file: z
+    .object({
+      path: z
+        .string()
+        .describe(
+          "Absolute path or path relative to the server process working directory. The file must already exist."
+        ),
+      old_string: z
+        .string()
+        .optional()
+        .describe(
+          "Replace mode only. Literal substring to find; must appear exactly once in the file."
+        ),
+      new_string: z
+        .string()
+        .max(500_000)
+        .describe(
+          "Replace mode: text that replaces old_string. Insert mode: text to insert at insert_position."
+        ),
+      insert_position: z
+        .enum(["start", "end", "before_line", "after_line"])
+        .optional()
+        .describe(
+          "Insert mode. Insert new_string at start/end of file, or before/after a 1-based line number (requires line)."
+        ),
+      line: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("1-based line number. Required when insert_position is before_line or after_line."),
+    })
+    .superRefine((data, ctx) => {
+      if (data.insert_position) {
+        if (
+          (data.insert_position === "before_line" || data.insert_position === "after_line") &&
+          data.line === undefined
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "line is required when insert_position is before_line or after_line",
+            path: ["line"],
+          });
+        }
+        return;
+      }
+      if (data.old_string === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "old_string is required for replace mode. Set insert_position to insert text instead.",
+          path: ["old_string"],
+        });
+      }
+    }),
   bash: z.object({
     terminal: z.string().describe("Terminal identifier for correlation and logging"),
     prompt: z.string().max(4096).describe("Bash command to execute"),

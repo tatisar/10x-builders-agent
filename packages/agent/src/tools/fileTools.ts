@@ -216,18 +216,34 @@ export async function executeWriteFile(input: WriteFileInput): Promise<WriteFile
 // edit_file
 // ---------------------------------------------------------------------------
 
+export type InsertPosition = "start" | "end" | "before_line" | "after_line";
+
 export interface EditFileInput {
   path: string;
-  old_string: string;
   new_string: string;
+  old_string?: string;
+  insert_position?: InsertPosition;
+  line?: number;
 }
 
-export interface EditFileSuccess {
+export interface EditFileReplaceSuccess {
   ok: true;
   tool: "edit_file";
   path: string;
+  operation: "replace";
   replacements: 1;
 }
+
+export interface EditFileInsertSuccess {
+  ok: true;
+  tool: "edit_file";
+  path: string;
+  operation: "insert";
+  insert_position: InsertPosition;
+  line?: number;
+}
+
+export type EditFileSuccess = EditFileReplaceSuccess | EditFileInsertSuccess;
 
 export interface EditFileFailure {
   ok: false;
@@ -253,47 +269,84 @@ export async function executeEditFile(input: EditFileInput): Promise<EditFileRes
     return { ok: false, tool: "edit_file", path: resolved, error: { code: "NOT_FOUND", message: `File not found: ${resolved}` } };
   }
 
-  // Count occurrences without regex to support arbitrary strings
-  const occurrences = countOccurrences(original, input.old_string);
+  let updated: string;
+  let success: EditFileSuccess;
 
-  if (occurrences === 0) {
-    return {
-      ok: false,
+  if (input.insert_position) {
+    const insertResult = applyInsert(original, input.new_string, input.insert_position, input.line);
+    if (!insertResult.ok) {
+      return {
+        ok: false,
+        tool: "edit_file",
+        path: resolved,
+        error: { code: insertResult.code, message: insertResult.message },
+      };
+    }
+    updated = insertResult.content;
+    success = {
+      ok: true,
       tool: "edit_file",
       path: resolved,
-      error: {
-        code: "OLD_STRING_NOT_FOUND",
-        message: `old_string was not found in the file. Make sure the text matches exactly (including whitespace and line endings).`,
-      },
+      operation: "insert",
+      insert_position: input.insert_position,
+      ...(input.line !== undefined ? { line: input.line } : {}),
+    };
+  } else {
+    if (input.old_string === undefined) {
+      return {
+        ok: false,
+        tool: "edit_file",
+        path: resolved,
+        error: {
+          code: "MISSING_OLD_STRING",
+          message:
+            "old_string is required for replace mode. Omit insert_position to replace text, or set insert_position (start, end, before_line, after_line) to insert new_string.",
+        },
+      };
+    }
+
+    const occurrences = countOccurrences(original, input.old_string);
+
+    if (occurrences === 0) {
+      return {
+        ok: false,
+        tool: "edit_file",
+        path: resolved,
+        error: {
+          code: "OLD_STRING_NOT_FOUND",
+          message: `old_string was not found in the file. Make sure the text matches exactly (including whitespace and line endings).`,
+        },
+      };
+    }
+
+    if (occurrences > 1) {
+      return {
+        ok: false,
+        tool: "edit_file",
+        path: resolved,
+        error: {
+          code: "OLD_STRING_AMBIGUOUS",
+          message: `old_string appears ${occurrences} times in the file. Provide more surrounding context in old_string so it matches exactly once.`,
+        },
+      };
+    }
+
+    updated = original.replace(input.old_string, input.new_string);
+    success = {
+      ok: true,
+      tool: "edit_file",
+      path: resolved,
+      operation: "replace",
+      replacements: 1,
     };
   }
 
-  if (occurrences > 1) {
-    return {
-      ok: false,
-      tool: "edit_file",
-      path: resolved,
-      error: {
-        code: "OLD_STRING_AMBIGUOUS",
-        message: `old_string appears ${occurrences} times in the file. Provide more surrounding context in old_string so it matches exactly once.`,
-      },
-    };
+  const writeError = await writeFileAtomically(resolved, updated);
+  if (writeError) {
+    return { ok: false, tool: "edit_file", path: resolved, error: writeError };
   }
 
-  const updated = original.replace(input.old_string, input.new_string);
-
-  // Write atomically: write to a temp file then rename into place
-  const tmp = resolve(dirname(resolved), `.tmp_${randomBytes(6).toString("hex")}`);
-  try {
-    await writeFile(tmp, updated, "utf8");
-    await rename(tmp, resolved);
-  } catch (err) {
-    // Best-effort cleanup of temp file
-    try { await access(tmp); /* exists */ await writeFile(tmp, ""); } catch { /* ignore */ }
-    return { ok: false, tool: "edit_file", path: resolved, error: { code: "WRITE_ERROR", message: String(err) } };
-  }
-
-  return { ok: true, tool: "edit_file", path: resolved, replacements: 1 };
+  return success;
 }
 
 // ---------------------------------------------------------------------------
@@ -309,4 +362,78 @@ function countOccurrences(haystack: string, needle: string): number {
     pos += needle.length;
   }
   return count;
+}
+
+function getLineStarts(content: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\n") starts.push(i + 1);
+  }
+  return starts;
+}
+
+function applyInsert(
+  content: string,
+  text: string,
+  position: InsertPosition,
+  line?: number
+): { ok: true; content: string } | { ok: false; code: string; message: string } {
+  if (position === "start") {
+    return { ok: true, content: text + content };
+  }
+
+  if (position === "end") {
+    return { ok: true, content: content + text };
+  }
+
+  if (line === undefined) {
+    return {
+      ok: false,
+      code: "MISSING_LINE",
+      message: `line is required when insert_position is "${position}".`,
+    };
+  }
+
+  const lineStarts = getLineStarts(content);
+  const totalLines = lineStarts.length;
+
+  if (line < 1 || line > totalLines) {
+    return {
+      ok: false,
+      code: "LINE_OUT_OF_RANGE",
+      message: `line ${line} is out of range. The file has ${totalLines} line(s).`,
+    };
+  }
+
+  const index =
+    position === "before_line"
+      ? lineStarts[line - 1]!
+      : line === totalLines
+        ? content.length
+        : lineStarts[line]!;
+
+  return {
+    ok: true,
+    content: content.slice(0, index) + text + content.slice(index),
+  };
+}
+
+async function writeFileAtomically(
+  resolved: string,
+  content: string
+): Promise<{ code: string; message: string } | null> {
+  const tmp = resolve(dirname(resolved), `.tmp_${randomBytes(6).toString("hex")}`);
+  try {
+    await writeFile(tmp, content, "utf8");
+    await rename(tmp, resolved);
+    return null;
+  } catch (err) {
+    try {
+      await access(tmp);
+      await writeFile(tmp, "");
+    } catch {
+      /* ignore */
+    }
+    return { code: "WRITE_ERROR", message: String(err) };
+  }
 }
