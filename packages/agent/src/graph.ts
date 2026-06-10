@@ -156,7 +156,7 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
     config?: RunnableConfig
   ): Promise<Partial<typeof GraphState.State>> {
     const currentDate = new Date().toLocaleString("es", {
-      timeZone: "Europa/Madrid",
+      timeZone: "Europe/Madrid",
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -167,8 +167,8 @@ export async function runAgent(input: AgentInput): Promise<AgentOutput> {
     const unattendedContext = state.bypassConfirmation
       ? "\n\n[Modo ejecución automática — tarea programada] No hay usuario presente. Las herramientas de riesgo medio/alto se aprueban y ejecutan automáticamente; no pidas confirmación humana. Usa las tools habilitadas directamente (p. ej. fetch_url para URLs públicas, o bash con curl como alternativa)."
       : "";
-    const systemPromptWithDate = `${state.systemPrompt}${unattendedContext}\n\nFecha y hora actual: ${currentDate} (hora Colombia).`;
-
+    //const systemPromptWithDate = `${state.systemPrompt}${unattendedContext}\n\nFecha y hora actual: ${currentDate} (hora Colombia).`;
+    const systemPromptWithDate = `${state.systemPrompt}${unattendedContext}\n\nFecha y hora actual: ${currentDate} (Europe/Madrid).`;
     // Inject SystemMessage fresh so it is never accumulated in state.messages.
     const response = await modelWithTools.invoke(
       [

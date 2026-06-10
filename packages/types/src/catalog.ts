@@ -125,6 +125,26 @@ export const TOOL_CATALOG: ToolDefinition[] = [
     displayDescription: "Descarga una URL pública y devuelve texto o JSON limpio.",
   },
   {
+    id: "gulp_search_projects",
+    name: "gulp_search_projects",
+    description:
+      "Searches freelance/IT project listings on gulp.de via its internal REST API. Use this when the user asks for Gulp projects, freelance gigs, or IT contracts on gulp.de. Do NOT use fetch_url on https://www.gulp.de/gulp2/g/projekte — that page is a JavaScript SPA and returns no useful content. This tool POSTs to the search API and returns structured JSON. Parameters: optional `query` (free-text search, e.g. 'SAP', 'Kubernetes') sent to the API; optional `offset` (default 0) and `limit` (default 10, max 20) for pagination; optional `location` and `remote_only` apply client-side filters on the returned page only — paginate with offset for exhaustive results. Process: validate env → POST search API → slim project fields → apply client filters → return JSON. Success: { ok: true, tool, total_count, returned, offset, limit, query?, projects: [{ id, title, location, description, url, start_date, type, is_remote_possible, skills, published_at }] }. Failure: { ok: false, error: { code, message } } e.g. TOOL_DISABLED, HTTP_ERROR, TIMEOUT, FETCH_FAILED, INVALID_RESPONSE. No confirmation required (low risk).",
+    risk: "low",
+    parameters_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Free-text search sent to Gulp API (e.g. 'SAP', 'Kubernetes')." },
+        offset: { type: "number", description: "Pagination offset. Defaults to 0." },
+        limit: { type: "number", description: "Max projects to return (1–20). Defaults to 10." },
+        location: { type: "string", description: "Client-side filter: substring match on project location." },
+        remote_only: { type: "boolean", description: "Client-side filter: only remote-friendly projects." },
+      },
+      required: [],
+    },
+    displayName: "Gulp: buscar proyectos",
+    displayDescription: "Busca proyectos freelance en gulp.de vía su API interna.",
+  },
+  {
     id: "write_file",
     name: "write_file",
     description:

@@ -30,6 +30,24 @@ export const TOOL_SCHEMAS = {
   fetch_url: z.object({
     url: z.string().url().describe("Public HTTP or HTTPS URL to fetch."),
   }),
+  gulp_search_projects: z.object({
+    query: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Free-text search sent to Gulp API (e.g. 'SAP', 'Kubernetes')."),
+    offset: z.number().int().min(0).optional().default(0),
+    limit: z.number().int().min(1).max(20).optional().default(10),
+    location: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Client-side filter: substring match on project location."),
+    remote_only: z
+      .boolean()
+      .optional()
+      .describe("Client-side filter: only remote-friendly projects."),
+  }),
   write_file: z.object({
     path: z.string().describe("Absolute path or path relative to the server process working directory. The file must NOT exist yet."),
     content: z.string().max(500_000).describe("Full UTF-8 content to write into the new file."),

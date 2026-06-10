@@ -8,6 +8,7 @@ import { withTracking } from "./withTracking";
 import { executeBash } from "./bashExec";
 import { executeReadFile, executeWriteFile, executeEditFile } from "./fileTools";
 import { executeFetchUrl } from "./fetchUrl";
+import { executeGulpSearchProjects } from "./gulpSearchProjects";
 import { resolveScheduledTaskTarget } from "./resolveScheduledTaskTarget";
 import { computeNextRunAtForResume } from "./scheduledTaskUtils";
 
@@ -173,6 +174,17 @@ export const TOOL_HANDLERS: ToolHandlers = {
 
   fetch_url: async (input: { url: string }) => {
     const result = await executeFetchUrl(input);
+    return result as unknown as Record<string, unknown>;
+  },
+
+  gulp_search_projects: async (input: {
+    query?: string;
+    offset?: number;
+    limit?: number;
+    location?: string;
+    remote_only?: boolean;
+  }) => {
+    const result = await executeGulpSearchProjects(input);
     return result as unknown as Record<string, unknown>;
   },
 

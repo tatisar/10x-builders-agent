@@ -75,6 +75,7 @@ export function OnboardingWizard({ userId, initialProfile, initialToolSettings }
       "bash",
       "read_file",
       "fetch_url",
+      "gulp_search_projects",
       "write_file",
       "edit_file",
       "schedule_task",
